@@ -9,6 +9,10 @@ import sys
 import yaml
 
 from collections.abc import Mapping
+from functools import partial
+from pathlib import Path
+
+import trafaret as t
 
 from logzero import logger
 
@@ -71,17 +75,83 @@ def checkout_repo(vardir=VARDIR, refresh=False):
         rc, stdout, stderr = _run_command(cmd)
 
 
+def convert_entry_to_path(content_type, entry):
+    """Convert content file into a path."""
+
+    base_path = Path(
+        'lib/ansible/'
+        if content_type not in {'units', 'targets'}
+        else f'test/{content_type}'
+    )
+
+    module_path = (
+        f'plugins/{content_type}/{entry}'
+        if content_type not in {
+            'units', 'targets',
+            'modules', 'module_utils',
+        }
+        else f'{content_type}/{entry}'
+        if content_type in {
+            'modules', 'module_utils',
+        }
+        else entry  # FIXME: needs discovery
+    )
+
+    resolved_path = base_path / module_path
+
+    return resolved_path
+
+
+_TRAFARET_COLLECTION_KEYS = {
+    'action', 'module_utils', 'modules',
+    'units', 'targets', 'become', 
+    'cache', 'callback', 'connection', 
+    'doc_fragments', 'filter', 'inventory', 
+    'lookup', 'test', 'shell', 
+    'strategy',  # 'vars', 
+}
+"""A list of supported collection entries."""
+
+
+_TRAFARET_SPEC_SCHEMA = t.Mapping(
+    t.String(),
+    t.Dict({
+        t.Key(k, default=[]): t.List(
+            t.String >> partial(convert_entry_to_path, k),
+        )
+        for k in _TRAFARET_COLLECTION_KEYS
+    }),
+)
+"""Validation schema for collection entries."""
+
+
 def load_spec_file(spec_file):
+    """Read and validate the spec."""
 
-    spec = {}
-    with open(spec_file, 'rb') as spec_fpointer:
-        # TODO: capture yamlerror?
-        spec = yaml.safe_load(spec_fpointer)
+    try:
+        spec = yaml.safe_load(Path(spec_file).read_text())
+    except FileNotFoundError:
+        sys.exit("Given spec file does not exist.")
+    except yaml.YAMLError:
+        sys.exit("The spec file does not contain valid YAML.")
 
-    if not isinstance(spec, Mapping):
-        sys.exit("Invalid format for spec file, expected a dictionary and got %s" % type(spec))
-    elif not spec:
-        sys.exit("Cannot use spec file, ended up with empty spec")
+    try:
+        spec = _TRAFARET_SPEC_SCHEMA.check(spec)
+    except t.DataError as data_err:
+        sys.exit(f"Spec doesn't conform schema: {data_err!s}")
+
+    if not spec:
+        sys.exit('Cannot use an empty spec file')
+
+    # FIXME: drop this if we decide that it's needed
+    for k, v in spec.items():
+        logger.debug(
+            'Removing targets and units entries from spec...',
+        )
+        del v['targets']
+        del v['units']
+
+    logger.info('validated spec: %r' % spec)
 
     return spec
 
@@ -294,12 +364,6 @@ def assemble_collections(spec, args):
 
         for plugin_type in spec[collection].keys():
 
-            # get right plugin path
-            if plugin_type not in PLUGIN_EXCEPTION_PATHS:
-                src_plugin_base = os.path.join('lib', 'ansible', 'plugins', plugin_type)
-            else:
-                src_plugin_base = PLUGIN_EXCEPTION_PATHS[plugin_type]
-
             # ensure destinations exist
             dest_plugin_base = os.path.join(collection_dir, 'plugins', plugin_type)
             if not os.path.exists(dest_plugin_base):
@@ -310,10 +374,11 @@ def assemble_collections(spec, args):
             # process each plugin
             for plugin in spec[collection][plugin_type]:
                 # TODO: currently requires 'full name of file', but should work w/o extension?
-                src = os.path.join(releases_dir, DEVEL_BRANCH + '.git', src_plugin_base, plugin)
+                src = Path(releases_dir) / f'{DEVEL_BRANCH}.git' / plugin
                 dest = os.path.join(dest_plugin_base, os.path.basename(plugin))
                 # create and read copy for modification
                 # FIXME copy or move
+                logger.debug(f'Copying {src}...')
                 shutil.copy(src, dest)
                 #with open(dst, 'r') as f:
                 #    pdata = f.read()
