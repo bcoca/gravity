@@ -28,6 +28,7 @@ yum_collection:
     - ini.py
   lookup:
     - env.py
+    - first_found.py
   test:
     - core.py
   shell:
