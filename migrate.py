@@ -175,7 +175,7 @@ def get_plugin_collection(plugin_name, plugin_type, spec):
     logger.debug('Assuming "%s.%s " stays in core' % (plugin_type, plugin_name))
     add_core(plugin_type, plugin_name.replace('/', '.'))
 
-    raise LookupError('Could not find pluging "%s" of type "%s" in any collection in the spec' % (plugin_name, plugin_type))
+    raise LookupError('Could not find plugin "%s" of type "%s" in any collection in the spec' % (plugin_name, plugin_type))
 
 
 def rewrite_doc_fragments(plugin_data, collection, spec, args):
