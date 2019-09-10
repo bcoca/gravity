@@ -12,7 +12,6 @@ import shutil
 import subprocess
 import sys
 import textwrap
-import yaml
 
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
@@ -23,7 +22,14 @@ from ansible.vars.reserved import is_reserved_name
 from logzero import logger
 
 from baron.parser import ParsingError
+from ruamel.yaml import YAML
 import redbaron
+
+
+yaml = YAML()
+yaml.default_flow_style = False
+yaml.preserve_quotes = True
+yaml.width = 1024  # long enough to not wrap lines
 
 
 # https://github.com/ansible/ansible/blob/100fe52860f45238ee8ca9e3019d1129ad043c68/hacking/fix_test_syntax.py#L62
@@ -79,12 +85,12 @@ def checkout_repo(vardir=VARDIR, refresh=False):
 # ===== FILE utils =====
 def read_yaml_file(path):
     with open(path, 'rb') as yaml_file:
-        return yaml.safe_load(yaml_file)
+        return yaml.load(yaml_file)
 
 
 def write_yaml_into_file_as_is(path, data):
-    yaml_text = yaml.dump(data, default_flow_style=False, sort_keys=False)
-    write_text_into_file(path, yaml_text)
+    with open(path, 'wb') as yaml_file:
+        yaml.dump(data, yaml_file)
 
 
 def read_text_from_file(path):
@@ -176,7 +182,7 @@ def rewrite_doc_fragments(mod_fst, collection, spec, namespace):
     # so that we don't feed a quoted string into the YAML parser:
     doc_txt = doc_val.to_python()
 
-    docs_parsed = yaml.safe_load(doc_txt.strip('\n'))
+    docs_parsed = yaml.load(doc_txt.strip('\n'))
 
     fragments = docs_parsed.get('extends_documentation_fragment', [])
     if not isinstance(fragments, list):
@@ -603,11 +609,7 @@ def assemble_collections(spec, args):
 
             inject_fqcn_loader_into_contest(collection_dir)
 
-            # FIXME need to hack PyYAML to preserve formatting (not how much it's possible or how much it is work) or use e.g. ruamel.yaml
-            try:
-                rewrite_integration_tests(integration_test_dirs, checkout_path, collection_dir, namespace, collection, spec)
-            except yaml.composer.ComposerError as e:
-                logger.error(e)
+            rewrite_integration_tests(integration_test_dirs, checkout_path, collection_dir, namespace, collection, spec)
 
             global integration_tests_deps
             for dep in integration_tests_deps:
@@ -1163,7 +1165,7 @@ def main():
 
     global core
     print('======= Assumed stayed in core =======\n')
-    print(yaml.dump(core))
+    print(yaml.dump(core, sys.stdout))
 
     global manual_check
     print('======= Could not rewrite the following, please check manually =======\n')
