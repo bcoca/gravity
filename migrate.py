@@ -619,6 +619,8 @@ def assemble_collections(spec, args):
 
             integration_test_dirs = []
             integration_tests_deps = set()
+            global visited_anchors
+            visited_anchors = []
 
             # write collection metadata
             write_yaml_into_file_as_is(
@@ -971,8 +973,16 @@ def _rewrite_yaml(contents, namespace, collection, spec):
         _rewrite_yaml_mapping(contents, namespace, collection, spec)
 
 
+visited_anchors = []
+
+
 def _rewrite_yaml_mapping(el, namespace, collection, spec):
     assert isinstance(el, Mapping)
+    global visited_anchors
+    if el.yaml_anchor and el.yaml_anchor in visited_anchors:
+        return
+
+    visited_anchors.append(el.yaml_anchor)
 
     _rewrite_yaml_mapping_keys(el, namespace, collection, spec)
     _rewrite_yaml_mapping_keys_non_vars(el, namespace, collection, spec)
@@ -1049,6 +1059,12 @@ def _rewrite_yaml_mapping_keys(el, namespace, collection, spec):
 def _rewrite_yaml_mapping_values(el, namespace, collection, spec):
     for key, value in el.items():
         if isinstance(value, Mapping):
+
+            global visited_anchors
+            if value.yaml_anchor and value.yaml_anchor in visited_anchors:
+                return
+
+            visited_anchors.append(value.yaml_anchor)
             if key == 'vars':
                 _rewrite_yaml_mapping_keys(el[key], namespace, collection, spec)
             if key != 'vars':
