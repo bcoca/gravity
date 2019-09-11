@@ -273,6 +273,8 @@ def rewrite_imports_in_fst(mod_fst, import_map, collection, spec):
             continue  # Skip imports of Base classes
         if len(imp.find_all('name_as_name', value='g:*loader*')) > 0:
             continue  # Skip imports of ansible.plugin.loader.py
+        if len(imp.find_all('name_as_name', value='g:AnsiblePlugin')) > 0:
+            continue  # Skip imports of ansible.plugin.AnsiblePlugin
 
         if imp_src[0].value == 'units':
             imp_src[:token_length] = exchange  # replace the import
